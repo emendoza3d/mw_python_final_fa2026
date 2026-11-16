@@ -1,24 +1,20 @@
-#being called for main program
-def read_menu():
+from pathlib import Path
+
+
+def read_menu(file_path=None):
+    path = Path(file_path) if file_path is not None else Path(__file__).with_name("menu.txt")
     menus = {}
-    try:
-        with open("final\\menu.txt", 'r') as file:
-            for line in file:
-                parts_of_line = line.strip().split(':')
-                category = parts_of_line[0].strip()
-                detail = parts_of_line[1].strip()
-                menus[category] = detail
-        print(f"contents of menu{menus}")
-        return menus
-    except FileNotFoundError:
-        print("Please make sure menu.txt exists.")
-    except IndexError:
-        return menus # this handles blank lines in the text file
-    except Exception as e:
-        print(e)
+    with path.open("r", encoding="utf-8") as file:
+        for line_number, line in enumerate(file, start=1):
+            if not line.strip():
+                continue
+            category, separator, detail = line.partition(":")
+            if not separator:
+                raise ValueError(f"Invalid menu entry on line {line_number}.")
+            menus[category.strip().upper()] = detail.strip()
+    return menus
 
 def split_into_variables(menu_items):
-    print(menu_items)
     shape = menu_items.get("SHAPE")
     style = menu_items.get("STYLE")
     metal = menu_items.get("METAL")
@@ -61,6 +57,5 @@ def print_diamond(diamond):
     for item in shape_item:
         print(f"{count}.    {item.strip()}")
         count += 1
-
 
 
