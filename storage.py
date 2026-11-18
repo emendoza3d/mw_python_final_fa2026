@@ -23,6 +23,7 @@ ORDER_FIELDS = (
     "style",
     "metal",
     "diamond",
+    "status",
 )
 PASSWORD_ITERATIONS = 600_000
 
@@ -75,7 +76,10 @@ def _replace_records(
 
 
 def _append_record(
-    path: Path, fields: tuple[str, ...], record: dict[str, str]
+    path: Path,
+    fields: tuple[str, ...],
+    record: dict[str, str],
+    optional_fields: tuple[str, ...] = (),
 ) -> None:
     write_header = not path.exists() or path.stat().st_size == 0
     if not write_header:
@@ -83,7 +87,7 @@ def _append_record(
             existing_fields = csv.DictReader(file).fieldnames or []
         if tuple(existing_fields) != fields:
             existing_records = _read_records(
-                path, fields, optional_fields=("password_hash",)
+                path, fields, optional_fields=optional_fields
             )
             _replace_records(path, fields, existing_records)
     with path.open("a", newline="", encoding="utf-8") as file:
@@ -150,7 +154,12 @@ def register_customer(
         "created_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
         "password_hash": _make_password_hash(password),
     }
-    _append_record(CUSTOMERS_FILE, CUSTOMER_FIELDS, customer)
+    _append_record(
+        CUSTOMERS_FILE,
+        CUSTOMER_FIELDS,
+        customer,
+        optional_fields=("password_hash",),
+    )
     return customer
 
 
@@ -177,8 +186,14 @@ def create_order(
         "style": selections["style"],
         "metal": selections["metal"],
         "diamond": selections["diamond"],
+        "status": "concept",
     }
-    _append_record(ORDERS_FILE, ORDER_FIELDS, order)
+    _append_record(
+        ORDERS_FILE,
+        ORDER_FIELDS,
+        order,
+        optional_fields=("status",),
+    )
     return order
 
 
@@ -186,9 +201,16 @@ def get_customer_orders(email: str) -> list[dict[str, str]]:
     normalized_email = email.strip().casefold()
     orders = [
         order
-        for order in _read_records(ORDERS_FILE, ORDER_FIELDS)
+        for order in _read_records(
+            ORDERS_FILE,
+            ORDER_FIELDS,
+            optional_fields=("status",),
+        )
         if order["customer_email"].casefold() == normalized_email
     ]
+    for order in orders:
+        if not order["status"]:
+            order["status"] = "concept"
     return sorted(orders, key=lambda order: order["created_at"], reverse=True)
 
 
@@ -198,14 +220,41 @@ def update_order(
     selections: dict[str, str],
 ) -> bool:
     normalized_email = customer_email.strip().casefold()
-    orders = _read_records(ORDERS_FILE, ORDER_FIELDS)
+    orders = _read_records(
+        ORDERS_FILE,
+        ORDER_FIELDS,
+        optional_fields=("status",),
+    )
     for order in orders:
         if (
             order["order_id"] == order_id
             and order["customer_email"].casefold() == normalized_email
         ):
+            if order["status"] == "finalized":
+                return False
             for field in ("shape", "style", "metal", "diamond"):
                 order[field] = selections[field]
+            order["status"] = order["status"] or "concept"
+            _replace_records(ORDERS_FILE, ORDER_FIELDS, orders)
+            return True
+    return False
+
+
+def finalize_order(order_id: str, customer_email: str) -> bool:
+    normalized_email = customer_email.strip().casefold()
+    orders = _read_records(
+        ORDERS_FILE,
+        ORDER_FIELDS,
+        optional_fields=("status",),
+    )
+    for order in orders:
+        if (
+            order["order_id"] == order_id
+            and order["customer_email"].casefold() == normalized_email
+        ):
+            if order["status"] == "finalized":
+                return False
+            order["status"] = "finalized"
             _replace_records(ORDERS_FILE, ORDER_FIELDS, orders)
             return True
     return False

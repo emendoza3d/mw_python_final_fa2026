@@ -140,8 +140,8 @@ def _show_menu(options: dict[str, list[str]]) -> None:
             st.write(", ".join(values))
 
 
-def _open_order_history() -> None:
-    st.session_state["studio_page"] = "Order history"
+def _open_ring_concepts() -> None:
+    st.session_state["studio_section"] = "Ring concepts"
 
 
 def _create_order(options: dict[str, list[str]]) -> None:
@@ -180,7 +180,7 @@ def _create_order(options: dict[str, list[str]]) -> None:
         )
         st.session_state["last_order"] = order
         st.success(
-            "Design saved in this demo profile. Find it anytime under Order history."
+            "Ring concept saved. Find and update it under Ring concepts."
         )
 
     last_order = st.session_state.get("last_order")
@@ -188,34 +188,45 @@ def _create_order(options: dict[str, list[str]]) -> None:
         with st.container(border=True):
             st.subheader("Your latest design")
             st.write(storage.get_order_summary(last_order))
-            st.caption(f"Demo order #{last_order['order_id']}")
+            st.caption(f"Concept #{last_order['order_id']}")
             st.button(
-                "View order history",
-                on_click=_open_order_history,
+                "View ring concepts",
+                on_click=_open_ring_concepts,
                 key="view_order_history",
             )
 
 
-def _show_order_history(options: dict[str, list[str]]) -> None:
+def _show_ring_concepts(options: dict[str, list[str]]) -> None:
     email = st.session_state.get("customer_email")
     if not email:
-        st.info("Sign in or create a profile in the sidebar to view order history.")
+        st.info("Sign in or create a profile in the sidebar to view ring concepts.")
         return
 
     st.markdown('<p class="atelier-kicker">Your collection</p>', unsafe_allow_html=True)
-    st.header("Order history")
+    st.header("Ring concepts")
     orders = storage.get_customer_orders(email)
     if not orders:
-        st.write("No designs yet. Your first ring design will appear here.")
+        st.write("No ring concepts yet. Your first design will appear here.")
         return
 
     for order in orders:
         with st.container(border=True):
             st.markdown(f"**{storage.get_order_summary(order)}**")
             st.caption(
-                f"Order #{order['order_id']} · "
+                f"Concept #{order['order_id']} · "
                 f"{order['created_at'].replace('T', ' ').replace('+00:00', ' UTC')}"
             )
+            if order["status"] == "finalized":
+                st.success(
+                    "Concept finalized. It is marked ready to discuss a purchase."
+                )
+                st.caption(
+                    "This demo records your confirmation only; it does not place "
+                    "an order or process payment."
+                )
+                continue
+
+            st.info("Concept — you can still make changes.")
             with st.form(f"edit_order_{order['order_id']}"):
                 shape_options = options["SHAPE"]
                 style_options = options["STYLE"]
@@ -274,10 +285,27 @@ def _show_order_history(options: dict[str, list[str]]) -> None:
                 }
                 if storage.update_order(order["order_id"], email, selections):
                     order.update(selections)
-                    st.success("Order updated.")
-                    st.markdown(f"**Updated design: {storage.get_order_summary(order)}**")
+                    st.success("Ring concept updated.")
+                    st.markdown(f"**Updated concept: {storage.get_order_summary(order)}**")
                 else:
-                    st.error("Could not update this order for the signed-in profile.")
+                    st.error("Could not update this concept for the signed-in profile.")
+
+            with st.form(f"finalize_order_{order['order_id']}"):
+                confirmed = st.checkbox(
+                    "I confirm this concept is ready to proceed toward purchase.",
+                    key=f"confirm_order_{order['order_id']}",
+                )
+                finalize = st.form_submit_button(
+                    "Confirm and finalize concept",
+                    type="primary",
+                )
+            if finalize:
+                if not confirmed:
+                    st.error("Confirm the concept before finalizing it.")
+                elif storage.finalize_order(order["order_id"], email):
+                    st.rerun()
+                else:
+                    st.error("Could not finalize this concept for the signed-in profile.")
 
 
 def main() -> None:
@@ -289,7 +317,7 @@ def main() -> None:
     _apply_styles()
     st.markdown('<p class="atelier-kicker">A little more personal</p>', unsafe_allow_html=True)
     st.title("Atelier Ring Studio")
-    st.write("Create a one-of-a-kind ring, one thoughtful detail at a time.")
+    st.write("Create and refine a ring concept, one thoughtful detail at a time.")
     st.warning(
         "Class demo only: use sample names and email addresses, not real customer "
         "information. Passwords are stored as salted hashes, but this demo has no "
@@ -308,16 +336,16 @@ def main() -> None:
 
     page = st.sidebar.radio(
         "Studio",
-        ("Create a ring", "Order history"),
-        key="studio_page",
+        ("Design a ring", "Ring concepts"),
+        key="studio_section",
     )
-    if page == "Create a ring":
+    if page == "Design a ring":
         if st.session_state.get("customer_email"):
             _create_order(options)
         else:
             st.info("Sign in or create a profile in the sidebar to design a ring.")
     else:
-        _show_order_history(options)
+        _show_ring_concepts(options)
 
 
 if __name__ == "__main__":

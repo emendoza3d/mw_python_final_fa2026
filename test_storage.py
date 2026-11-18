@@ -127,6 +127,59 @@ class StorageTests(unittest.TestCase):
         self.assertEqual(updated["shape"], "round")
         self.assertEqual(updated["style"], "solitaire")
 
+    def test_order_can_be_finalized_only_by_its_owner_and_then_locked(self):
+        order = storage.create_order(
+            "sample@example.com",
+            {
+                "shape": "oval",
+                "style": "halo",
+                "metal": "gold",
+                "diamond": "lab",
+            },
+        )
+        selections = {
+            "shape": "round",
+            "style": "solitaire",
+            "metal": "platinum",
+            "diamond": "natural",
+        }
+
+        self.assertFalse(
+            storage.finalize_order(order["order_id"], "other@example.com")
+        )
+        self.assertTrue(storage.finalize_order(order["order_id"], "sample@example.com"))
+        self.assertFalse(storage.finalize_order(order["order_id"], "sample@example.com"))
+        self.assertFalse(
+            storage.update_order(order["order_id"], "sample@example.com", selections)
+        )
+        finalized = storage.get_customer_orders("sample@example.com")[0]
+        self.assertEqual(finalized["status"], "finalized")
+        self.assertEqual(finalized["shape"], "oval")
+
+    def test_legacy_orders_default_to_editable_concepts(self):
+        self.orders_file.write_text(
+            "order_id,customer_email,created_at,shape,style,metal,diamond\n"
+            "LEGACY1234,sample@example.com,2025-01-01T00:00:00+00:00,"
+            "oval,halo,gold,lab\n",
+            encoding="utf-8",
+        )
+
+        orders = storage.get_customer_orders("sample@example.com")
+
+        self.assertEqual(orders[0]["status"], "concept")
+        self.assertTrue(
+            storage.update_order(
+                "LEGACY1234",
+                "sample@example.com",
+                {
+                    "shape": "round",
+                    "style": "solitaire",
+                    "metal": "platinum",
+                    "diamond": "natural",
+                },
+            )
+        )
+
     def test_csv_has_a_header_and_round_trips_values(self):
         storage.register_customer(
             "sample@example.com", "Sample Customer", "secure-passphrase"
