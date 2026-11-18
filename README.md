@@ -20,6 +20,10 @@ concepts** or the **Ring concepts** page to review and edit saved designs.
 When ready, confirm and finalize a concept; finalized concepts are locked from
 further edits and marked ready to discuss a purchase.
 
+The design page and saved concepts include a generic illustration based on
+stone shape, setting style, metal, and diamond type. It is an illustrative
+preview, not a to-scale rendering of a finished ring.
+
 ## Demo data only
 
 This is still a class demo. Do not enter real customer information or reuse a

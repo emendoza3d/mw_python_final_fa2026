@@ -1,6 +1,7 @@
 """Streamlit app for the sample custom-ring ordering experience."""
 
 import re
+from html import escape
 from pathlib import Path
 
 import streamlit as st
@@ -140,6 +141,86 @@ def _show_menu(options: dict[str, list[str]]) -> None:
             st.write(", ".join(values))
 
 
+def _ring_preview_svg(shape: str, style: str, metal: str, diamond: str) -> str:
+    metal_colors = {
+        "gold": "#c89535",
+        "white gold": "#c8d0d8",
+        "rose gold": "#c98276",
+        "platinum": "#9caab5",
+    }
+    band_color = metal_colors.get(metal.casefold(), "#b79b70")
+    gem_color = "#f4fbff" if diamond.casefold() == "natural" else "#dff5ff"
+
+    gem_shapes = {
+        "round": '<circle cx="220" cy="93" r="25" />',
+        "cushion": '<rect x="196" y="69" width="48" height="48" rx="13" />',
+        "marquise": '<path d="M220 61 C251 81 251 105 220 125 C189 105 189 81 220 61 Z" />',
+        "oval": '<ellipse cx="220" cy="93" rx="21" ry="31" />',
+    }
+    gem = gem_shapes.get(shape.casefold(), gem_shapes["round"])
+    details = []
+    if style.casefold() == "halo":
+        details.append(
+            '<circle cx="220" cy="93" r="34" fill="none" '
+            'stroke="#e8d8ae" stroke-width="4" stroke-dasharray="2 5" />'
+        )
+    elif style.casefold() == "vintage":
+        details.extend(
+            [
+                '<path d="M174 151 Q192 129 205 136 M266 151 Q248 129 235 136" '
+                'fill="none" stroke="#9d7046" stroke-width="3" />',
+                '<circle cx="187" cy="143" r="5" fill="#f3e7c7" />',
+                '<circle cx="253" cy="143" r="5" fill="#f3e7c7" />',
+            ]
+        )
+    elif style.casefold() == "3 stone":
+        details.extend(
+            [
+                '<circle cx="177" cy="119" r="13" fill="#edf7fc" '
+                'stroke="#aab9c5" stroke-width="2" />',
+                '<circle cx="263" cy="119" r="13" fill="#edf7fc" '
+                'stroke="#aab9c5" stroke-width="2" />',
+            ]
+        )
+
+    return f"""
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 440 250"
+         role="img" aria-label="{escape(f'{shape} {style} ring in {metal} with {diamond} diamond')}">
+      <defs>
+        <linearGradient id="band" x1="0" x2="1" y1="0" y2="1">
+          <stop offset="0" stop-color="{band_color}" />
+          <stop offset="0.5" stop-color="#fff5dc" />
+          <stop offset="1" stop-color="{band_color}" />
+        </linearGradient>
+        <linearGradient id="gem" x1="0" x2="1" y1="0" y2="1">
+          <stop offset="0" stop-color="#ffffff" />
+          <stop offset="1" stop-color="{gem_color}" />
+        </linearGradient>
+      </defs>
+      <rect x="8" y="8" width="424" height="234" rx="18" fill="#fbf8f2" />
+      <ellipse cx="220" cy="177" rx="91" ry="37" fill="none"
+               stroke="url(#band)" stroke-width="19" />
+      <path d="M197 117 Q220 137 243 117" fill="none"
+            stroke="{band_color}" stroke-width="7" stroke-linecap="round" />
+      {''.join(details)}
+      <g fill="url(#gem)" stroke="#8193a1" stroke-width="2">
+        {gem}
+      </g>
+      <path d="M207 80 L220 93 L233 80 M207 106 L220 93 L233 106"
+            fill="none" stroke="#c1d4df" stroke-width="1.5" />
+      <text x="220" y="226" text-anchor="middle" fill="#75685d"
+            font-family="sans-serif" font-size="12">
+        {escape(shape.title())} · {escape(style.title())} · {escape(metal.title())} · {escape(diamond.title())}
+      </text>
+    </svg>
+    """
+
+
+def _show_ring_preview(shape: str, style: str, metal: str, diamond: str) -> None:
+    st.markdown(_ring_preview_svg(shape, style, metal, diamond), unsafe_allow_html=True)
+    st.caption("Illustrative preview only; not a to-scale product rendering.")
+
+
 def _open_ring_concepts() -> None:
     st.session_state["studio_section"] = "Ring concepts"
 
@@ -165,13 +246,17 @@ def _create_order(options: dict[str, list[str]]) -> None:
         style = st.selectbox("Setting style", options["STYLE"])
         diamond = st.selectbox("Diamond", options["DIAMOND"])
 
-    with st.container(border=True):
-        st.subheader("Your selections")
-        st.write(
-            f"{shape.title()} shape · {style.title()} setting · "
-            f"{metal.title()} · {diamond.title()} diamond"
-        )
-        submitted = st.button("Save design", type="primary", key="save_design")
+    preview_column, summary_column = st.columns([1.2, 1])
+    with preview_column:
+        _show_ring_preview(shape, style, metal, diamond)
+    with summary_column:
+        with st.container(border=True):
+            st.subheader("Your selections")
+            st.write(
+                f"{shape.title()} shape · {style.title()} setting · "
+                f"{metal.title()} · {diamond.title()} diamond"
+            )
+            submitted = st.button("Save design", type="primary", key="save_design")
 
     if submitted:
         order = storage.create_order(
@@ -212,6 +297,12 @@ def _show_ring_concepts(options: dict[str, list[str]]) -> None:
     for order in orders:
         with st.container(border=True):
             st.markdown(f"**{storage.get_order_summary(order)}**")
+            _show_ring_preview(
+                order["shape"],
+                order["style"],
+                order["metal"],
+                order["diamond"],
+            )
             st.caption(
                 f"Concept #{order['order_id']} · "
                 f"{order['created_at'].replace('T', ' ').replace('+00:00', ' UTC')}"
