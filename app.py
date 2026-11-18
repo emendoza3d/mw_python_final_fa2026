@@ -2,6 +2,7 @@
 
 import re
 from pathlib import Path
+from uuid import uuid4
 
 import streamlit as st
 
@@ -65,10 +66,16 @@ def _apply_styles() -> None:
 
 def _customer_access() -> None:
     st.sidebar.markdown("### Your studio")
-    st.sidebar.caption("Demo profiles use an email address as a lookup only.")
+    st.sidebar.caption(
+        "Use sample details only. Email is only used to look up a demo profile; "
+        "no password is required. You can also try the app without entering an email."
+    )
     with st.sidebar.form("customer_access"):
         email = st.text_input("Email")
-        name = st.text_input("Name (needed for a new profile)")
+        name = st.text_input(
+            "Name",
+            help="Required only when creating a new profile; leave blank to open an existing one.",
+        )
         submitted = st.form_submit_button("Open my studio", type="primary")
 
     if submitted:
@@ -90,6 +97,13 @@ def _customer_access() -> None:
                 else:
                     st.sidebar.success(f"Welcome back, {customer['name']}.")
 
+    if st.sidebar.button("Try with a sample profile", key="sample_profile"):
+        sample_email = f"guest-{uuid4().hex}@example.test"
+        customer, _ = storage.get_or_create_customer(sample_email, "Sample Guest")
+        st.session_state["customer_email"] = customer["email"]
+        st.session_state["customer_name"] = customer["name"]
+        st.sidebar.success("Sample profile ready. No personal information needed.")
+
     active_email = st.session_state.get("customer_email")
     if active_email:
         st.sidebar.info(
@@ -104,25 +118,38 @@ def _show_menu(options: dict[str, list[str]]) -> None:
             st.write(", ".join(values))
 
 
+def _open_order_history() -> None:
+    st.session_state["studio_page"] = "Order history"
+
+
 def _create_order(options: dict[str, list[str]]) -> None:
     email = st.session_state.get("customer_email")
     if not email:
-        st.info("Open a demo profile in the sidebar to start a ring order.")
+        st.info(
+            "To try the demo, open a profile in the sidebar, choose your ring "
+            "details, and save your design. Use sample information only."
+        )
         return
 
     st.markdown('<p class="atelier-kicker">Made for you</p>', unsafe_allow_html=True)
     st.header("Design your ring")
     st.write("Choose the details that bring your idea to life.")
 
-    with st.form("ring_order"):
-        first, second = st.columns(2)
-        with first:
-            shape = st.selectbox("Stone shape", options["SHAPE"])
-            metal = st.selectbox("Metal", options["METAL"])
-        with second:
-            style = st.selectbox("Setting style", options["STYLE"])
-            diamond = st.selectbox("Diamond", options["DIAMOND"])
-        submitted = st.form_submit_button("Review and save design", type="primary")
+    first, second = st.columns(2)
+    with first:
+        shape = st.selectbox("Stone shape", options["SHAPE"])
+        metal = st.selectbox("Metal", options["METAL"])
+    with second:
+        style = st.selectbox("Setting style", options["STYLE"])
+        diamond = st.selectbox("Diamond", options["DIAMOND"])
+
+    with st.container(border=True):
+        st.subheader("Your selections")
+        st.write(
+            f"{shape.title()} shape · {style.title()} setting · "
+            f"{metal.title()} · {diamond.title()} diamond"
+        )
+        submitted = st.button("Save design", type="primary", key="save_design")
 
     if submitted:
         order = storage.create_order(
@@ -130,7 +157,9 @@ def _create_order(options: dict[str, list[str]]) -> None:
             {"shape": shape, "style": style, "metal": metal, "diamond": diamond},
         )
         st.session_state["last_order"] = order
-        st.success("Your design has been saved to this demo.")
+        st.success(
+            "Design saved in this demo profile. Find it anytime under Order history."
+        )
 
     last_order = st.session_state.get("last_order")
     if last_order and last_order["customer_email"] == email:
@@ -138,6 +167,11 @@ def _create_order(options: dict[str, list[str]]) -> None:
             st.subheader("Your latest design")
             st.write(storage.get_order_summary(last_order))
             st.caption(f"Demo order #{last_order['order_id']}")
+            st.button(
+                "View order history",
+                on_click=_open_order_history,
+                key="view_order_history",
+            )
 
 
 def _show_order_history() -> None:
@@ -187,7 +221,11 @@ def main() -> None:
     _customer_access()
     _show_menu(options)
 
-    page = st.sidebar.radio("Studio", ("Create a ring", "Order history"))
+    page = st.sidebar.radio(
+        "Studio",
+        ("Create a ring", "Order history"),
+        key="studio_page",
+    )
     if page == "Create a ring":
         _create_order(options)
     else:

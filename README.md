@@ -12,9 +12,11 @@ pip install -r requirements.txt
 streamlit run app.py
 ```
 
-In the sidebar, enter a sample name and email to create a demo profile or use
-an existing email to look it up. Choose ring details and save the design; use
-**Order history** to review previous designs for that profile.
+In the sidebar, select **Try with a sample profile** to start without entering
+an email, or use sample details to create or look up a demo profile. A name is
+required only when creating a new profile. Review the displayed selection
+summary and select **Save design**; after saving, use **View order history** or
+the **Order history** page to review designs for that profile.
 
 ## Demo data only
 
