@@ -21,18 +21,59 @@ class StorageTests(unittest.TestCase):
         self.addCleanup(self.customer_files.stop)
         self.addCleanup(self.order_files.stop)
 
-    def test_customer_email_is_normalized_and_reused(self):
-        customer, created = storage.get_or_create_customer(
-            "  SAMPLE@EXAMPLE.COM ", "Sample Customer"
-        )
-        repeated, created_again = storage.get_or_create_customer(
-            "sample@example.com", "A different name"
+    def test_customer_password_is_hashed_and_email_is_normalized(self):
+        customer = storage.register_customer(
+            "  SAMPLE@EXAMPLE.COM ", "Sample Customer", "secure-passphrase"
         )
 
-        self.assertTrue(created)
-        self.assertFalse(created_again)
         self.assertEqual(customer["email"], "sample@example.com")
-        self.assertEqual(repeated["name"], "Sample Customer")
+        self.assertNotEqual(customer["password_hash"], "secure-passphrase")
+        self.assertTrue(
+            customer["password_hash"].startswith("pbkdf2_sha256$")
+        )
+        self.assertEqual(
+            storage.authenticate_customer("SAMPLE@example.com", "secure-passphrase")[
+                "name"
+            ],
+            "Sample Customer",
+        )
+        self.assertIsNone(
+            storage.authenticate_customer("sample@example.com", "wrong-password")
+        )
+
+    def test_registration_rejects_existing_legacy_profile_and_short_password(self):
+        self.customers_file.write_text(
+            "email,name,created_at\n"
+            "legacy@example.com,Legacy User,2025-01-01T00:00:00+00:00\n",
+            encoding="utf-8",
+        )
+
+        with self.assertRaises(ValueError):
+            storage.register_customer(
+                "legacy@example.com", "Legacy User", "secure-passphrase"
+            )
+        with self.assertRaises(ValueError):
+            storage.register_customer("new@example.com", "New User", "short")
+        self.assertIsNone(
+            storage.authenticate_customer("legacy@example.com", "any-password")
+        )
+
+    def test_registration_preserves_legacy_profiles_when_migrating_csv(self):
+        self.customers_file.write_text(
+            "email,name,created_at\n"
+            "legacy@example.com,Legacy User,2025-01-01T00:00:00+00:00\n",
+            encoding="utf-8",
+        )
+        storage.register_customer(
+            "new@example.com", "New User", "secure-passphrase"
+        )
+
+        with self.customers_file.open("r", newline="", encoding="utf-8") as file:
+            rows = list(csv.DictReader(file))
+        self.assertEqual(len(rows), 2)
+        self.assertEqual(rows[0]["email"], "legacy@example.com")
+        self.assertEqual(rows[0]["password_hash"], "")
+        self.assertTrue(rows[1]["password_hash"])
 
     def test_orders_are_saved_and_filtered_by_customer(self):
         sample_order = storage.create_order(
@@ -59,8 +100,37 @@ class StorageTests(unittest.TestCase):
         self.assertEqual(orders[0]["order_id"], sample_order["order_id"])
         self.assertEqual(orders[0]["shape"], "oval")
 
+    def test_order_can_be_updated_only_by_its_owner(self):
+        sample_order = storage.create_order(
+            "sample@example.com",
+            {
+                "shape": "oval",
+                "style": "halo",
+                "metal": "gold",
+                "diamond": "lab",
+            },
+        )
+        changes = {
+            "shape": "round",
+            "style": "solitaire",
+            "metal": "platinum",
+            "diamond": "natural",
+        }
+
+        self.assertFalse(
+            storage.update_order(sample_order["order_id"], "other@example.com", changes)
+        )
+        self.assertTrue(
+            storage.update_order(sample_order["order_id"], "sample@example.com", changes)
+        )
+        updated = storage.get_customer_orders("sample@example.com")[0]
+        self.assertEqual(updated["shape"], "round")
+        self.assertEqual(updated["style"], "solitaire")
+
     def test_csv_has_a_header_and_round_trips_values(self):
-        storage.get_or_create_customer("sample@example.com", "Sample Customer")
+        storage.register_customer(
+            "sample@example.com", "Sample Customer", "secure-passphrase"
+        )
 
         with self.customers_file.open("r", newline="", encoding="utf-8") as file:
             rows = list(csv.DictReader(file))

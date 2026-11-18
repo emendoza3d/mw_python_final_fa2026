@@ -2,7 +2,6 @@
 
 import re
 from pathlib import Path
-from uuid import uuid4
 
 import streamlit as st
 
@@ -67,48 +66,71 @@ def _apply_styles() -> None:
 def _customer_access() -> None:
     st.sidebar.markdown("### Your studio")
     st.sidebar.caption(
-        "Use sample details only. Email is only used to look up a demo profile; "
-        "no password is required. You can also try the app without entering an email."
+        "Use sample details only. Sign in with your email and password, or create "
+        "a new profile."
     )
-    with st.sidebar.form("customer_access"):
-        email = st.text_input("Email")
-        name = st.text_input(
-            "Name",
-            help="Required only when creating a new profile; leave blank to open an existing one.",
-        )
-        submitted = st.form_submit_button("Open my studio", type="primary")
-
-    if submitted:
-        normalized_email = email.strip()
-        if not _is_valid_email(normalized_email):
-            st.sidebar.error("Enter a valid email address.")
-        else:
-            existing = storage.get_customer(normalized_email)
-            if existing is None and not name.strip():
-                st.sidebar.error("Enter a name to create a demo profile.")
-            else:
-                customer, created = storage.get_or_create_customer(
-                    normalized_email, name
-                )
-                st.session_state["customer_email"] = customer["email"]
-                st.session_state["customer_name"] = customer["name"]
-                if created:
-                    st.sidebar.success("Demo profile created.")
-                else:
-                    st.sidebar.success(f"Welcome back, {customer['name']}.")
-
-    if st.sidebar.button("Try with a sample profile", key="sample_profile"):
-        sample_email = f"guest-{uuid4().hex}@example.test"
-        customer, _ = storage.get_or_create_customer(sample_email, "Sample Guest")
-        st.session_state["customer_email"] = customer["email"]
-        st.session_state["customer_name"] = customer["name"]
-        st.sidebar.success("Sample profile ready. No personal information needed.")
-
     active_email = st.session_state.get("customer_email")
     if active_email:
         st.sidebar.info(
             f"Current profile: {st.session_state.get('customer_name', active_email)}"
         )
+        if st.sidebar.button("Sign out", key="sign_out"):
+            st.session_state.pop("customer_email", None)
+            st.session_state.pop("customer_name", None)
+            st.rerun()
+        return
+
+    sign_in_tab, create_tab = st.sidebar.tabs(("Sign in", "Create profile"))
+    with sign_in_tab:
+        with st.form("customer_sign_in"):
+            sign_in_email = st.text_input("Email", key="sign_in_email")
+            sign_in_password = st.text_input(
+                "Password", type="password", key="sign_in_password"
+            )
+            sign_in_submitted = st.form_submit_button("Sign in", type="primary")
+
+        if sign_in_submitted:
+            if not _is_valid_email(sign_in_email):
+                st.error("Enter a valid email address.")
+            else:
+                customer = storage.authenticate_customer(
+                    sign_in_email, sign_in_password
+                )
+                if customer is None:
+                    st.error("Invalid email or password.")
+                else:
+                    st.session_state["customer_email"] = customer["email"]
+                    st.session_state["customer_name"] = customer["name"]
+                    st.rerun()
+
+    with create_tab:
+        with st.form("customer_registration"):
+            register_email = st.text_input("Email", key="register_email")
+            register_name = st.text_input("Name", key="register_name")
+            register_password = st.text_input(
+                "Password (at least 8 characters)",
+                type="password",
+                key="register_password",
+            )
+            register_submitted = st.form_submit_button(
+                "Create account", type="primary"
+            )
+
+        if register_submitted:
+            if not _is_valid_email(register_email):
+                st.error("Enter a valid email address.")
+            else:
+                try:
+                    customer = storage.register_customer(
+                        register_email, register_name, register_password
+                    )
+                except ValueError as error:
+                    st.error(str(error))
+                else:
+                    st.session_state["customer_email"] = customer["email"]
+                    st.session_state["customer_name"] = customer["name"]
+                    st.success("Profile created.")
+                    st.rerun()
 
 
 def _show_menu(options: dict[str, list[str]]) -> None:
@@ -174,10 +196,10 @@ def _create_order(options: dict[str, list[str]]) -> None:
             )
 
 
-def _show_order_history() -> None:
+def _show_order_history(options: dict[str, list[str]]) -> None:
     email = st.session_state.get("customer_email")
     if not email:
-        st.info("Open a demo profile in the sidebar to view its order history.")
+        st.info("Sign in or create a profile in the sidebar to view order history.")
         return
 
     st.markdown('<p class="atelier-kicker">Your collection</p>', unsafe_allow_html=True)
@@ -194,6 +216,68 @@ def _show_order_history() -> None:
                 f"Order #{order['order_id']} · "
                 f"{order['created_at'].replace('T', ' ').replace('+00:00', ' UTC')}"
             )
+            with st.form(f"edit_order_{order['order_id']}"):
+                shape_options = options["SHAPE"]
+                style_options = options["STYLE"]
+                metal_options = options["METAL"]
+                diamond_options = options["DIAMOND"]
+                first, second = st.columns(2)
+                with first:
+                    shape = st.selectbox(
+                        "Stone shape",
+                        shape_options,
+                        index=(
+                            shape_options.index(order["shape"])
+                            if order["shape"] in shape_options
+                            else 0
+                        ),
+                        key=f"edit_shape_{order['order_id']}",
+                    )
+                    metal = st.selectbox(
+                        "Metal",
+                        metal_options,
+                        index=(
+                            metal_options.index(order["metal"])
+                            if order["metal"] in metal_options
+                            else 0
+                        ),
+                        key=f"edit_metal_{order['order_id']}",
+                    )
+                with second:
+                    style = st.selectbox(
+                        "Setting style",
+                        style_options,
+                        index=(
+                            style_options.index(order["style"])
+                            if order["style"] in style_options
+                            else 0
+                        ),
+                        key=f"edit_style_{order['order_id']}",
+                    )
+                    diamond = st.selectbox(
+                        "Diamond",
+                        diamond_options,
+                        index=(
+                            diamond_options.index(order["diamond"])
+                            if order["diamond"] in diamond_options
+                            else 0
+                        ),
+                        key=f"edit_diamond_{order['order_id']}",
+                    )
+                updated = st.form_submit_button("Save changes")
+            if updated:
+                selections = {
+                    "shape": shape,
+                    "style": style,
+                    "metal": metal,
+                    "diamond": diamond,
+                }
+                if storage.update_order(order["order_id"], email, selections):
+                    order.update(selections)
+                    st.success("Order updated.")
+                    st.markdown(f"**Updated design: {storage.get_order_summary(order)}**")
+                else:
+                    st.error("Could not update this order for the signed-in profile.")
 
 
 def main() -> None:
@@ -208,8 +292,9 @@ def main() -> None:
     st.write("Create a one-of-a-kind ring, one thoughtful detail at a time.")
     st.warning(
         "Class demo only: use sample names and email addresses, not real customer "
-        "information. This demo has no password protection, and CSV data on "
-        "Streamlit Community Cloud may be lost when the app restarts."
+        "information. Passwords are stored as salted hashes, but this demo has no "
+        "email verification or password recovery. CSV data on Streamlit Community "
+        "Cloud may be lost when the app restarts."
     )
 
     try:
@@ -227,9 +312,12 @@ def main() -> None:
         key="studio_page",
     )
     if page == "Create a ring":
-        _create_order(options)
+        if st.session_state.get("customer_email"):
+            _create_order(options)
+        else:
+            st.info("Sign in or create a profile in the sidebar to design a ring.")
     else:
-        _show_order_history()
+        _show_order_history(options)
 
 
 if __name__ == "__main__":
